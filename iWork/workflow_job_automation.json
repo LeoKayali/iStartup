@@ -1,0 +1,190 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 5,
+              "triggerAtMinute": 5
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [ 4112, 2192 ],
+      "id": "fd656f28-3664-40e5-9766-286b29f9c62b",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[YOUR_SERVER_URL]/search",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"keyword\": \"Electronics Automation\",\n  \"location\": \"San Francisco\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 4416, 2192 ],
+      "id": "ea6550d0-e04c-41ae-ab6e-102fa15b1ac1",
+      "name": "Search Jobs (API)"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze the job description. If it contains PLC, Automation, Control Systems, or SCADA, respond with exactly: Resume_Control.pdf\nIf it contains Hardware, Circuit, PCB, or Embedded, respond with exactly: Resume_Electronics.pdf\nUnder no circumstances should you add any polite remarks, introductions, explanations, or conversational text. YOU MUST OUTPUT ONLY THE FILE STRING AND ABSOLUTELY NOTHING ELSE. Default to Resume_Electronics.pdf if unsure.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.4,
+      "position": [ 4784, 2192 ],
+      "id": "75ffcc39-05ff-4026-9b99-659a153ed665",
+      "name": "Gemini AI Agent"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[YOUR_SERVER_URL]/apply",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": \"{{ $('Search Jobs (API)').item.json.url }}\",\n  \"jobtitle\": \"{{ $('Search Jobs (API)').item.json.title }}\",\n  \"resume\": \"[YOUR_HOME_PATH]/.n8n/{{ $json.output }}\",\n  \"email\": \"[YOUR_EMAIL]\",\n  \"password\": \"[YOUR_PASSWORD]\",\n  \"firstname\": \"Leo\",\n  \"lastname\": \"Kayali\",\n  \"phone\": \"[YOUR_PHONE]\",\n  \"linkedin\": \"linkedin.com/in/LeoKayali/\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 5440, 2192 ],
+      "id": "3ade00a9-7866-447a-a966-ca4ac42d1041",
+      "name": "Apply to Job (API)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[YOUR_SERVER_URL]/search",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"keyword\": \"Electronics Automation\",\n  \"location\": \"Remote\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 4432, 2720 ],
+      "id": "dc86a72a-bee9-4909-b723-528455a675e0",
+      "name": "Search Jobs1 (API)"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze the job description. If it contains PLC, Automation, Control Systems, or SCADA, respond with exactly: Resume_Control.pdf\nIf it contains Hardware, Circuit, PCB, or Embedded, respond with exactly: Resume_Electronics.pdf\nUnder no circumstances should you add any polite remarks, introductions, explanations, or conversational text. YOU MUST OUTPUT ONLY THE FILE STRING AND ABSOLUTELY NOTHING ELSE. Default to Resume_Electronics.pdf if unsure.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.4,
+      "position": [ 4784, 2720 ],
+      "id": "ef4666c4-aa2a-423c-b45e-56fe83ece0ee",
+      "name": "Gemini AI Agent1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[YOUR_SERVER_URL]/apply",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": \"{{ $('Search Jobs1 (API)').item.json.url }}\",\n  \"jobtitle\": \"{{ $('Search Jobs1 (API)').item.json.title }}\",\n  \"resume\": \"[YOUR_HOME_PATH]/.n8n/{{ $json.output }}\",\n  \"email\": \"[YOUR_EMAIL]\",\n  \"password\": \"[YOUR_PASSWORD]\",\n  \"firstname\": \"Leo\",\n  \"lastname\": \"Kayali\",\n  \"phone\": \"[YOUR_PHONE]\",\n  \"linkedin\": \"linkedin.com/in/LeoKayali/\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 5440, 2720 ],
+      "id": "4ea9c4d1-e0c7-48f7-93bd-3e7c3fe1e32b",
+      "name": "Apply to Job1 (API)"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [ 4784, 2384 ],
+      "id": "0786d37d-445b-4944-a8cd-ce43fe616edb",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "[YOUR_CREDENTIALS_ID]",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [ 4784, 2912 ],
+      "id": "c6ff6842-9faa-4051-ae43-5ab6fb7e26bf",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "[YOUR_CREDENTIALS_ID]",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          { "node": "Search Jobs (API)", "type": "main", "index": 0 },
+          { "node": "Search Jobs1 (API)", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Search Jobs (API)": {
+      "main": [
+        [
+          { "node": "Gemini AI Agent", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Gemini AI Agent": {
+      "main": [
+        [
+          { "node": "Apply to Job (API)", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Search Jobs1 (API)": {
+      "main": [
+        [
+          { "node": "Gemini AI Agent1", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Gemini AI Agent1": {
+      "main": [
+        [
+          { "node": "Apply to Job1 (API)", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          { "node": "Gemini AI Agent", "type": "ai_languageModel", "index": 0 }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          { "node": "Gemini AI Agent1", "type": "ai_languageModel", "index": 0 }
+        ]
+      ]
+    }
+  }
+}
