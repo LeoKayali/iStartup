@@ -3,7 +3,7 @@ Automations for startups
 
 ## Project 1: iWork (Autonomous Job Application)
 **Location**: `iWork/`
-An agentic automation system that scrapes job listings, classifies them using Gemini AI, and automatically applies using Playwright.
+An automation system that scrapes job listings, filters them for relevance, selects the matching resume, and automatically applies using Playwright. Orchestrated by n8n; no LLM API on the critical path.
 
 ## Project 2: iFund (Venture Funding Outreach)
 **Location**: `iFund/`

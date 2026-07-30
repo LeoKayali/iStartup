@@ -1,7 +1,7 @@
 # iWork - Autonomous Job Application System
 
-An agentic automation system that scrapes job listings, classifies them with
-Gemini to pick a resume, and completes the application with Playwright, all
+An automation system that scrapes job listings, filters them for relevance,
+picks the matching resume, and completes the application with Playwright, all
 orchestrated by n8n.
 
 ## Architecture
@@ -10,16 +10,28 @@ orchestrated by n8n.
 n8n (Docker)                      host (systemd)
 Schedule 8 AM
   -> POST /search   ------------>  FastAPI bridge  -> search_jobs.py  -> jobspy
+                                                     (filters + picks resume)
   -> Split Out "jobs"
-  -> Gemini agent (picks a resume filename)
-  -> Merge by position (rejoins job url/title with the resume choice)
   -> POST /apply    ------------>  FastAPI bridge  -> apply_job.py    -> Playwright
 ```
 
-Resumes are read from `RESUME_DIR` on the host. They are deliberately **not**
-pulled from Google Drive per run: the PDFs never change, and an OAuth refresh
-token on a consent screen in *Testing* status expires after 7 days, which
-silently breaks the whole pipeline about a week after setup.
+Two external dependencies were deliberately removed from this critical path,
+because each one silently took the whole pipeline down.
+
+**Google Drive.** Resumes are read from `RESUME_DIR` on the host rather than
+downloaded per run. The PDFs never change, and an OAuth refresh token on a
+consent screen in *Testing* status expires after 7 days. Removing it also
+removed a `/home/node/.n8n` vs host-path mismatch that meant the resume path
+never resolved, so applications went out with nothing attached.
+
+**Gemini.** Resume selection was an LLM agent node whose entire prompt was
+"if the description mentions PLC/SCADA use one file, if it mentions PCB/embedded
+use the other, otherwise default". That is keyword matching, and running it as
+an external API put a retirable model on the critical path -- Gemini 2.0 Flash
+was shut down on 2026-06-01 and nodes with a blank model field inherit whatever
+default their version carries. It is now `classify_resume()` in
+`search_jobs.py`: deterministic, free, unit-tested, and it cannot go offline.
+Whichever term list matches more distinct terms wins; ties fall to the default.
 
 ## Design rule: failures are loud
 
@@ -45,7 +57,9 @@ reason and are reported in the daily email.
 
 - Python 3.10+
 - n8n (self-hosted; the bridge is reachable at the host's internal IP)
-- A Google Gemini API key
+
+No LLM API key or Google credential is needed. The only outbound calls are to
+the job boards themselves.
 
 ## Setup
 
@@ -95,13 +109,16 @@ curl -s -H "X-IWork-Token: $BRIDGE_TOKEN" http://127.0.0.1:8080/health
 ### 4. n8n workflows
 
 Import `workflow_job_automation.json` and `workflow_daily_summary.json`, then
-replace `[YOUR_BRIDGE_URL]`, `[YOUR_BRIDGE_TOKEN]`, `[YOUR_CREDENTIALS_ID]`,
-`[YOUR_RESEND_API_KEY]` and `[YOUR_EMAIL]`.
+replace `[YOUR_BRIDGE_URL]`, `[YOUR_BRIDGE_TOKEN]`, `[YOUR_RESEND_API_KEY]` and
+`[YOUR_EMAIL]`. No credentials need configuring.
 
-Confirm the Gemini node's **Model** field is a model that currently exists.
-It is pinned to `models/gemini-2.5-flash` rather than left blank on purpose:
-a blank field inherits the node's default, and when Google retires that
-default the workflow dies with a 404 and no code change on your side.
+Import the job workflow as a **new** workflow rather than editing an existing
+one. n8n stores interval-trigger recurrence state in each workflow's
+`staticData`, and that state can get stuck such that the workflow reports
+**Active** while never executing again. A fresh row starts clean.
+
+Both triggers use a fixed daily cron for the same reason -- avoid
+"every N hours" interval triggers, which is what stuck.
 
 ## Verify before trusting it
 
@@ -109,8 +126,9 @@ default the workflow dies with a 404 and no code change on your side.
 python selftest.py
 ```
 
-Offline checks for the relevance filter, the already-applied memory bank,
-resume resolution, and URL validation. No network or browser needed.
+33 offline checks: the relevance filter, the already-applied memory bank,
+resume resolution and path-traversal rejection, URL validation, and resume
+classification. No network or browser needed.
 
 Then a real end-to-end dry run, which completes a form but never clicks submit:
 
@@ -127,6 +145,10 @@ nothing left -- the system starves itself and looks broken.
 `MATCH_TITLE_ANY` / `EXCLUDE_TITLE_ANY` filter on the job **title**. Indeed
 matches your keywords against the entire posting, so without a title filter a
 search for "Electronics Automation" returns things like "Legal Assistant".
+
+`MATCH_CONTROL_ANY` / `MATCH_ELECTRONICS_ANY` decide which resume gets sent.
+Whichever list matches more distinct terms in the title plus description wins;
+ties and no-match fall to `Resume_Electronics.pdf`.
 
 ## Known limitation
 

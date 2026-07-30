@@ -89,6 +89,30 @@ check("rejects empty", apply_job.valid_url(""), False)
 check("rejects a bare host", apply_job.valid_url("example.com/job"), False)
 check("rejects a file url", apply_job.valid_url("file:///etc/passwd"), False)
 
+print("resume classification (replaces the Gemini agent node)")
+ctl = search_jobs.terms(search_jobs.DEFAULT_CONTROL_ANY)
+ele = search_jobs.terms(search_jobs.DEFAULT_ELECTRONICS_ANY)
+C, E = search_jobs.RESUME_CONTROL, search_jobs.RESUME_ELECTRONICS
+
+
+def classify(title, desc=""):
+    return search_jobs.classify_resume(title, desc, ctl, ele)
+
+
+check("PLC/SCADA -> control", classify("Controls Engineer", "Program PLC and SCADA systems, ladder logic"), C)
+check("PCB/embedded -> electronics", classify("Hardware Engineer", "PCB schematic capture, embedded firmware"), E)
+check("empty -> electronics default", classify("", ""), E)
+check("neither list -> electronics default", classify("Project Manager", "Coordinate schedules and budgets"), E)
+check("title alone counts", classify("PLC Technician"), C)
+# Mixed postings: the side with more distinct matches wins, ties go to the default.
+check("control-heavy mixed -> control", classify("Automation Engineer", "PLC, SCADA, HMI, VFD, plus some PCB work"), C)
+check("electronics-heavy mixed -> electronics", classify("Hardware Lead", "PCB, FPGA, analog, RF, schematic, one PLC"), E)
+check("exact tie -> electronics default", classify("Engineer", "PLC work and PCB work"), E)
+# The real posting from a live run.
+check("maintenance tech with PLC -> control",
+      classify("Equipment Maintenance Technician",
+               "Basic troubleshooting of PLC-controlled equipment, sensors, relays, HMIs"), C)
+
 print()
 if FAILURES:
     print(f"{len(FAILURES)} check(s) failed: {', '.join(FAILURES)}")

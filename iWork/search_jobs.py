@@ -1,7 +1,7 @@
-"""Search job boards for fresh, relevant postings.
+"""Search job boards for fresh, relevant postings and pick a resume for each.
 
 Contract with the n8n bridge:
-  stdout  -> {"count": N, "jobs": [{"title", "url", "description"}, ...]}
+  stdout  -> {"count": N, "jobs": [{"title", "url", "description", "resume"}, ...]}
   stderr  -> one-line diagnostics (how many were scraped, dropped, kept)
   exit 0  -> the search ran; N may legitimately be 0
   exit 1  -> the search failed; stderr holds the reason
@@ -9,6 +9,12 @@ Contract with the n8n bridge:
 An empty result is a normal outcome. A failure is never disguised as a
 result -- returning a fake "job" on error is what made the previous
 version fail silently for months.
+
+Resume selection used to be a Gemini agent node in n8n. The prompt it ran was
+literal keyword matching over two possible filenames, so it lived on the
+critical path as an external API that could retire a model underneath us --
+which it did. It is a local function now: deterministic, free, and it cannot
+go offline.
 """
 
 import argparse
@@ -16,8 +22,8 @@ import json
 import os
 import sys
 
-# Titles must contain at least one of these to be worth applying to. Indeed
-# matches keywords against the whole posting, which is how a "Legal Assistant"
+# Titles must contain at least one of these to be worth applying to. Job boards
+# match keywords against the whole posting, which is how a "Legal Assistant"
 # ended up in the results for "Electronics Automation".
 DEFAULT_TITLE_ANY = (
     "electronic,electrical,automation,controls,control system,plc,scada,"
@@ -29,6 +35,21 @@ DEFAULT_TITLE_NONE = (
     "legal,attorney,paralegal,nurse,teacher,driver,sales,recruiter,"
     "accountant,marketing,barista,cashier,security guard,insurance"
 )
+
+# Resume selection. Whichever list matches more distinct terms wins; ties and
+# no-match both fall to the electronics resume, matching the original default.
+DEFAULT_CONTROL_ANY = (
+    "plc,scada,control system,controls,dcs,hmi,ladder logic,motion control,"
+    "servo,vfd,allen bradley,rockwell,siemens,beckhoff,codesys,tia portal"
+)
+
+DEFAULT_ELECTRONICS_ANY = (
+    "hardware,circuit,pcb,embedded,firmware,schematic,analog,rf,fpga,"
+    "altium,kicad,signal integrity,soldering,microcontroller"
+)
+
+RESUME_CONTROL = "Resume_Control.pdf"
+RESUME_ELECTRONICS = "Resume_Electronics.pdf"
 
 
 def log(message):
@@ -58,6 +79,14 @@ def title_matches(title, include_any, exclude_any):
     if not include_any:
         return True
     return any(term in t for term in include_any)
+
+
+def classify_resume(title, description, control_any, electronics_any):
+    """Pick which resume to send. Replaces the Gemini classification node."""
+    text = f"{title or ''}\n{description or ''}".lower()
+    control_hits = sum(1 for term in control_any if term in text)
+    electronics_hits = sum(1 for term in electronics_any if term in text)
+    return RESUME_CONTROL if control_hits > electronics_hits else RESUME_ELECTRONICS
 
 
 def select(rows, applied, include_any, exclude_any, limit):
@@ -137,6 +166,8 @@ def main():
                         help="Max jobs returned per run; 0 for no cap")
     parser.add_argument("--match-title-any", default=os.getenv("MATCH_TITLE_ANY", DEFAULT_TITLE_ANY))
     parser.add_argument("--exclude-title-any", default=os.getenv("EXCLUDE_TITLE_ANY", DEFAULT_TITLE_NONE))
+    parser.add_argument("--control-terms", default=os.getenv("MATCH_CONTROL_ANY", DEFAULT_CONTROL_ANY))
+    parser.add_argument("--electronics-terms", default=os.getenv("MATCH_ELECTRONICS_ANY", DEFAULT_ELECTRONICS_ANY))
     parser.add_argument("--desc-chars", type=int, default=int(os.getenv("DESC_CHARS", "3000")))
     args = parser.parse_args()
 
@@ -167,6 +198,19 @@ def main():
         terms(args.exclude_title_any),
         args.limit,
     )
+
+    control_any = terms(args.control_terms)
+    electronics_any = terms(args.electronics_terms)
+    for job in jobs:
+        job["resume"] = classify_resume(
+            job["title"], job["description"], control_any, electronics_any
+        )
+
+    counts = {}
+    for job in jobs:
+        counts[job["resume"]] = counts.get(job["resume"], 0) + 1
+    if counts:
+        log("search: resume split " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
 
     print(json.dumps({"count": len(jobs), "jobs": jobs}))
     return 0
