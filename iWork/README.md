@@ -108,17 +108,34 @@ curl -s -H "X-IWork-Token: $BRIDGE_TOKEN" http://127.0.0.1:8080/health
 
 ### 4. n8n workflows
 
-Import `workflow_job_automation.json` and `workflow_daily_summary.json`, then
-replace `[YOUR_BRIDGE_URL]`, `[YOUR_BRIDGE_TOKEN]`, `[YOUR_RESEND_API_KEY]` and
-`[YOUR_EMAIL]`. No credentials need configuring.
+Import `workflow_iwork.json`, then replace `[YOUR_BRIDGE_URL]`,
+`[YOUR_BRIDGE_TOKEN]`, `[YOUR_RESEND_API_KEY]` and `[YOUR_EMAIL]`. No n8n
+credentials need configuring.
 
-Import the job workflow as a **new** workflow rather than editing an existing
-one. n8n stores interval-trigger recurrence state in each workflow's
-`staticData`, and that state can get stuck such that the workflow reports
-**Active** while never executing again. A fresh row starts clean.
+It is one workflow with two independent triggers:
 
-Both triggers use a fixed daily cron for the same reason -- avoid
-"every N hours" interval triggers, which is what stuck.
+| Trigger | Cron | Chain |
+|---|---|---|
+| Daily 8 AM - Apply | `0 8 * * *` | `/search` -> Split Out -> `/apply`, one branch per location |
+| Daily 6 PM - Report | `0 18 * * *` | `/stats` -> Resend email |
+
+The report is a second trigger rather than a continuation of the 8 AM chain on
+purpose. The apply branches emit one item per job, so chaining the email after
+them would send one email per job; collapsing them back would need Merge plus
+Aggregate nodes, and that kind of fan-in plumbing is what previously broke.
+
+Import as a **new** workflow rather than importing into an existing one. n8n
+stores schedule-trigger recurrence state in each workflow's `staticData`, and
+importing into an existing workflow keeps that row -- along with any stuck
+state. A fresh row starts clean.
+
+Both triggers use a fixed daily cron rather than an "every N hours" interval.
+Interval triggers keep their position in `staticData` and can get stuck such
+that the workflow reports **Active** while never executing again.
+
+The workflow timezone is pinned in `settings`. Without it a workflow inherits
+`GENERIC_TIMEZONE`, so the same cron fires at a different wall-clock time than
+your other workflows.
 
 ## Verify before trusting it
 
