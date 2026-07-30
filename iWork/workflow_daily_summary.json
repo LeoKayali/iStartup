@@ -80,5 +80,9 @@
         ]
       ]
     }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Los_Angeles"
   }
 }
