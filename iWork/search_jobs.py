@@ -1,66 +1,176 @@
-import json
-import argparse
-import os
-from jobspy import scrape_jobs
+"""Search job boards for fresh, relevant postings.
 
-def fetch_aggregated_jobs(keyword_string, location, log_dir):
-    keywords = [k.strip() for k in keyword_string.split(',')]
-    all_jobs = []
-    
-    # Load up the internal memory bank of jobs we applied to already
-    applied_urls = set()
-    log_file = os.path.join(log_dir, "applied_jobs.txt")
-    if os.path.exists(log_file):
-        with open(log_file, "r") as f:
-            applied_urls = set(line.strip() for line in f)
+Contract with the n8n bridge:
+  stdout  -> {"count": N, "jobs": [{"title", "url", "description"}, ...]}
+  stderr  -> one-line diagnostics (how many were scraped, dropped, kept)
+  exit 0  -> the search ran; N may legitimately be 0
+  exit 1  -> the search failed; stderr holds the reason
+
+An empty result is a normal outcome. A failure is never disguised as a
+result -- returning a fake "job" on error is what made the previous
+version fail silently for months.
+"""
+
+import argparse
+import json
+import os
+import sys
+
+# Titles must contain at least one of these to be worth applying to. Indeed
+# matches keywords against the whole posting, which is how a "Legal Assistant"
+# ended up in the results for "Electronics Automation".
+DEFAULT_TITLE_ANY = (
+    "electronic,electrical,automation,controls,control system,plc,scada,"
+    "embedded,firmware,hardware,pcb,instrumentation,mechatronic,robotic,"
+    "test engineer,systems engineer,maintenance technician"
+)
+
+DEFAULT_TITLE_NONE = (
+    "legal,attorney,paralegal,nurse,teacher,driver,sales,recruiter,"
+    "accountant,marketing,barista,cashier,security guard,insurance"
+)
+
+
+def log(message):
+    """Diagnostics go to stderr so they never corrupt the JSON contract."""
+    print(message, file=sys.stderr, flush=True)
+
+
+def terms(raw):
+    return [t.strip().lower() for t in (raw or "").split(",") if t.strip()]
+
+
+def load_applied(log_dir):
+    path = os.path.join(log_dir, "applied_jobs.txt")
+    if not os.path.exists(path):
+        return set()
+    with open(path, "r", encoding="utf-8") as f:
+        return {line.strip() for line in f if line.strip()}
+
+
+def title_matches(title, include_any, exclude_any):
+    """True if the title looks like a job we actually want."""
+    t = (title or "").lower()
+    if not t:
+        return False
+    if any(term in t for term in exclude_any):
+        return False
+    if not include_any:
+        return True
+    return any(term in t for term in include_any)
+
+
+def select(rows, applied, include_any, exclude_any, limit):
+    """Dedupe, drop already-applied and off-target jobs, then cap the batch."""
+    seen = set()
+    picked = []
+    dupes = already = off_target = 0
+
+    for job in rows:
+        url = job.get("url", "")
+        if not url or url == "nan":
+            continue
+        if url in seen:
+            dupes += 1
+            continue
+        seen.add(url)
+        if url in applied:
+            already += 1
+            continue
+        if not title_matches(job.get("title", ""), include_any, exclude_any):
+            off_target += 1
+            continue
+        picked.append(job)
+
+    log(
+        f"search: scraped={len(rows)} dupes={dupes} already_applied={already} "
+        f"off_target={off_target} eligible={len(picked)}"
+    )
+
+    if limit and len(picked) > limit:
+        log(f"search: capping {len(picked)} eligible jobs at limit={limit}")
+        picked = picked[:limit]
+
+    return picked
+
+
+def scrape(keywords, location, results_wanted, hours_old, country, desc_chars):
+    # Imported lazily so --help and selftest.py work without the scraper.
+    from jobspy import scrape_jobs
+
+    rows = []
+    for kw in keywords:
+        # NOTE: the parameter is country_indeed. An earlier version passed
+        # country_alfa2, which is not part of the jobspy API.
+        df = scrape_jobs(
+            site_name=["indeed", "zip_recruiter"],
+            search_term=kw,
+            location=location,
+            results_wanted=results_wanted,
+            hours_old=hours_old,
+            country_indeed=country,
+        )
+        if df is None or df.empty:
+            log(f"search: keyword={kw!r} location={location!r} -> 0 rows")
+            continue
+        log(f"search: keyword={kw!r} location={location!r} -> {len(df)} rows")
+        for _, row in df.iterrows():
+            rows.append(
+                {
+                    "title": str(row.get("title") or "").strip(),
+                    "url": str(row.get("job_url") or "").strip(),
+                    "description": str(row.get("description") or "")[:desc_chars],
+                }
+            )
+    return rows
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Search job boards for fresh postings")
+    parser.add_argument("--keyword", required=True, help="Comma-separated keyword(s)")
+    parser.add_argument("--location", required=True, help="Location, or 'Remote'")
+    parser.add_argument("--logdir", default=os.getenv("LOG_DIR", "./logs"))
+    parser.add_argument("--results-wanted", type=int, default=int(os.getenv("RESULTS_WANTED", "15")))
+    parser.add_argument("--hours-old", type=int, default=int(os.getenv("HOURS_OLD", "168")))
+    parser.add_argument("--country", default=os.getenv("COUNTRY_INDEED", "USA"))
+    parser.add_argument("--limit", type=int, default=int(os.getenv("MAX_PER_RUN", "5")),
+                        help="Max jobs returned per run; 0 for no cap")
+    parser.add_argument("--match-title-any", default=os.getenv("MATCH_TITLE_ANY", DEFAULT_TITLE_ANY))
+    parser.add_argument("--exclude-title-any", default=os.getenv("EXCLUDE_TITLE_ANY", DEFAULT_TITLE_NONE))
+    parser.add_argument("--desc-chars", type=int, default=int(os.getenv("DESC_CHARS", "3000")))
+    args = parser.parse_args()
+
+    keywords = [k.strip() for k in args.keyword.split(",") if k.strip()]
+    if not keywords:
+        log("search: --keyword produced no usable terms")
+        return 1
 
     try:
-        for kw in keywords:
-            jobs_df = scrape_jobs(
-                site_name=["indeed", "zip_recruiter"], 
-                search_term=kw,
-                location=location,
-                results_wanted=5, 
-                hours_old=168,   
-                country_alfa2="US"
-            )
-            
-            if not jobs_df.empty:
-                for index, row in jobs_df.iterrows():
-                    all_jobs.append({
-                        "title": str(row.get("title", "Unknown Title")),
-                        "url": str(row.get("job_url", "")),
-                        "description": str(row.get("description", ""))[:3000]
-                    })
-                    
-        # Deduplicate and check memory bank simultaneously
-        unique_jobs = {}
-        for job in all_jobs:
-            current_url = job["url"]
-            if current_url and current_url not in unique_jobs and current_url != "nan":
-                if current_url not in applied_urls:
-                    unique_jobs[current_url] = job
-                
-        final_list = list(unique_jobs.values())
-        
-        if len(final_list) == 0:
-            return [{
-                "title": f"Debug: ZERO fresh matching jobs",
-                "url": "N/A",
-                "description": "Either zero jobs exist in the last 7 days, or you have already successfully applied to all of them!"
-            }]
-            
-        return final_list
-
+        rows = scrape(
+            keywords,
+            args.location,
+            args.results_wanted,
+            args.hours_old,
+            args.country,
+            args.desc_chars,
+        )
     except Exception as e:
-        return [{"title": "Aggregator Error", "url": "N/A", "description": str(e)}]
+        # Loud and non-zero. The bridge turns this into an HTTP 500 so the
+        # n8n node goes red instead of quietly processing a fake job.
+        log(f"search: FAILED {type(e).__name__}: {e}")
+        return 1
+
+    jobs = select(
+        rows,
+        load_applied(args.logdir),
+        terms(args.match_title_any),
+        terms(args.exclude_title_any),
+        args.limit,
+    )
+
+    print(json.dumps({"count": len(jobs), "jobs": jobs}))
+    return 0
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Search Jobs via Aggregator')
-    parser.add_argument('--keyword', type=str, required=True, help='Job keyword(s)')
-    parser.add_argument('--location', type=str, required=True, help='Location')
-    parser.add_argument('--logdir', type=str, default="./logs", help='Directory to store logs')
-    args = parser.parse_args()
-    
-    results = fetch_aggregated_jobs(args.keyword, args.location, args.logdir)
-    print(json.dumps(results))
+    sys.exit(main())

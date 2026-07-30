@@ -1,0 +1,35 @@
+; Keeps the bridge alive across logout and reboot. Starting uvicorn by hand
+; means it dies with the SSH session and n8n then gets ECONNREFUSED with no
+; explanation -- which is easy to mistake for "no jobs found today".
+;
+; Adjust User= and the /opt/iwork paths to your install, then:
+;   sudo cp iwork-bridge.service /etc/systemd/system/
+;   sudo systemctl daemon-reload
+;   sudo systemctl enable --now iwork-bridge
+;   systemctl status iwork-bridge
+;   journalctl -u iwork-bridge -f
+
+[Unit]
+Description=iWork FastAPI bridge (n8n -> local job automation scripts)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=iwork
+Group=iwork
+WorkingDirectory=/opt/iwork
+EnvironmentFile=/opt/iwork/.env
+ExecStart=/opt/iwork/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8080
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# The bridge only ever needs its own tree.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

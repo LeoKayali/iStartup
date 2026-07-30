@@ -1,116 +1,82 @@
 {
+  "name": "iWork - Autonomous Job Application",
   "nodes": [
     {
       "parameters": {
         "rule": {
           "interval": [
             {
-              "field": "hours",
-              "hoursInterval": 5,
-              "triggerAtMinute": 5
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
             }
           ]
         }
       },
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
-      "position": [ 4112, 2192 ],
-      "id": "fd656f28-3664-40e5-9766-286b29f9c62b",
+      "position": [ 240, 400 ],
+      "id": "a1000000-0000-4000-8000-000000000001",
       "name": "Schedule Trigger"
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "[YOUR_SERVER_URL]/search",
+        "url": "[YOUR_BRIDGE_URL]/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-IWork-Token",
+              "value": "[YOUR_BRIDGE_TOKEN]"
+            }
+          ]
+        },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\n  \"keyword\": \"Electronics Automation\",\n  \"location\": \"San Francisco\"\n}",
+        "jsonBody": "{\n  \"keyword\": \"Electronics Automation, Controls Engineer, PLC\",\n  \"location\": \"San Francisco\",\n  \"limit\": 5\n}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [ 4416, 2192 ],
-      "id": "ea6550d0-e04c-41ae-ab6e-102fa15b1ac1",
-      "name": "Search Jobs (API)"
+      "position": [ 480, 240 ],
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Search Jobs (SF)"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "jobs",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [ 700, 240 ],
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Split Jobs (SF)"
     },
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Analyze the job description. If it contains PLC, Automation, Control Systems, or SCADA, respond with exactly: Resume_Control.pdf\nIf it contains Hardware, Circuit, PCB, or Embedded, respond with exactly: Resume_Electronics.pdf\nUnder no circumstances should you add any polite remarks, introductions, explanations, or conversational text. YOU MUST OUTPUT ONLY THE FILE STRING AND ABSOLUTELY NOTHING ELSE. Default to Resume_Electronics.pdf if unsure.",
-        "options": {}
+        "text": "={{ $json.description }}",
+        "options": {
+          "systemMessage": "You classify job descriptions to select a resume.\n\nIf the description mentions PLC, Automation, Control Systems, or SCADA, respond with exactly: Resume_Control.pdf\nIf it mentions Hardware, Circuit, PCB, or Embedded, respond with exactly: Resume_Electronics.pdf\nIf unsure, respond with exactly: Resume_Electronics.pdf\n\nOutput only the filename. No explanation, no punctuation, no other text."
+        }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.4,
-      "position": [ 4784, 2192 ],
-      "id": "75ffcc39-05ff-4026-9b99-659a153ed665",
-      "name": "Gemini AI Agent"
+      "position": [ 920, 240 ],
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Pick Resume (SF)"
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "[YOUR_SERVER_URL]/apply",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"url\": \"{{ $('Search Jobs (API)').item.json.url }}\",\n  \"jobtitle\": \"{{ $('Search Jobs (API)').item.json.title }}\",\n  \"resume\": \"[YOUR_HOME_PATH]/.n8n/{{ $json.output }}\",\n  \"email\": \"[YOUR_EMAIL]\",\n  \"password\": \"[YOUR_PASSWORD]\",\n  \"firstname\": \"Leo\",\n  \"lastname\": \"Kayali\",\n  \"phone\": \"[YOUR_PHONE]\",\n  \"linkedin\": \"linkedin.com/in/LeoKayali/\"\n}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [ 5440, 2192 ],
-      "id": "3ade00a9-7866-447a-a966-ca4ac42d1041",
-      "name": "Apply to Job (API)"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "[YOUR_SERVER_URL]/search",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{\n  \"keyword\": \"Electronics Automation\",\n  \"location\": \"Remote\"\n}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [ 4432, 2720 ],
-      "id": "dc86a72a-bee9-4909-b723-528455a675e0",
-      "name": "Search Jobs1 (API)"
-    },
-    {
-      "parameters": {
-        "promptType": "define",
-        "text": "=Analyze the job description. If it contains PLC, Automation, Control Systems, or SCADA, respond with exactly: Resume_Control.pdf\nIf it contains Hardware, Circuit, PCB, or Embedded, respond with exactly: Resume_Electronics.pdf\nUnder no circumstances should you add any polite remarks, introductions, explanations, or conversational text. YOU MUST OUTPUT ONLY THE FILE STRING AND ABSOLUTELY NOTHING ELSE. Default to Resume_Electronics.pdf if unsure.",
-        "options": {}
-      },
-      "type": "@n8n/n8n-nodes-langchain.agent",
-      "typeVersion": 1.4,
-      "position": [ 4784, 2720 ],
-      "id": "ef4666c4-aa2a-423c-b45e-56fe83ece0ee",
-      "name": "Gemini AI Agent1"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "[YOUR_SERVER_URL]/apply",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"url\": \"{{ $('Search Jobs1 (API)').item.json.url }}\",\n  \"jobtitle\": \"{{ $('Search Jobs1 (API)').item.json.title }}\",\n  \"resume\": \"[YOUR_HOME_PATH]/.n8n/{{ $json.output }}\",\n  \"email\": \"[YOUR_EMAIL]\",\n  \"password\": \"[YOUR_PASSWORD]\",\n  \"firstname\": \"Leo\",\n  \"lastname\": \"Kayali\",\n  \"phone\": \"[YOUR_PHONE]\",\n  \"linkedin\": \"linkedin.com/in/LeoKayali/\"\n}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.1,
-      "position": [ 5440, 2720 ],
-      "id": "4ea9c4d1-e0c7-48f7-93bd-3e7c3fe1e32b",
-      "name": "Apply to Job1 (API)"
-    },
-    {
-      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
         "options": {}
       },
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
-      "position": [ 4784, 2384 ],
-      "id": "0786d37d-445b-4944-a8cd-ce43fe616edb",
-      "name": "Google Gemini Chat Model",
+      "position": [ 920, 420 ],
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Gemini (SF)",
       "credentials": {
         "googlePalmApi": {
           "id": "[YOUR_CREDENTIALS_ID]",
@@ -120,69 +86,221 @@
     },
     {
       "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [ 1160, 240 ],
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Job + Resume (SF)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[YOUR_BRIDGE_URL]/apply",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-IWork-Token",
+              "value": "[YOUR_BRIDGE_TOKEN]"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": \"{{ $json.url }}\",\n  \"jobtitle\": \"{{ $json.title }}\",\n  \"resume_name\": \"{{ $json.output && $json.output.includes('Resume_Control') ? 'Resume_Control.pdf' : 'Resume_Electronics.pdf' }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 1400, 240 ],
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Apply to Job (SF)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[YOUR_BRIDGE_URL]/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-IWork-Token",
+              "value": "[YOUR_BRIDGE_TOKEN]"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"keyword\": \"Electronics Automation, Controls Engineer, PLC\",\n  \"location\": \"Remote\",\n  \"limit\": 5\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 480, 640 ],
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Search Jobs (Remote)"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "jobs",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [ 700, 640 ],
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Split Jobs (Remote)"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.description }}",
+        "options": {
+          "systemMessage": "You classify job descriptions to select a resume.\n\nIf the description mentions PLC, Automation, Control Systems, or SCADA, respond with exactly: Resume_Control.pdf\nIf it mentions Hardware, Circuit, PCB, or Embedded, respond with exactly: Resume_Electronics.pdf\nIf unsure, respond with exactly: Resume_Electronics.pdf\n\nOutput only the filename. No explanation, no punctuation, no other text."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.4,
+      "position": [ 920, 640 ],
+      "id": "a1000000-0000-4000-8000-00000000000a",
+      "name": "Pick Resume (Remote)"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
         "options": {}
       },
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
-      "position": [ 4784, 2912 ],
-      "id": "c6ff6842-9faa-4051-ae43-5ab6fb7e26bf",
-      "name": "Google Gemini Chat Model1",
+      "position": [ 920, 820 ],
+      "id": "a1000000-0000-4000-8000-00000000000b",
+      "name": "Gemini (Remote)",
       "credentials": {
         "googlePalmApi": {
           "id": "[YOUR_CREDENTIALS_ID]",
           "name": "Google Gemini(PaLM) Api account"
         }
       }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [ 1160, 640 ],
+      "id": "a1000000-0000-4000-8000-00000000000c",
+      "name": "Job + Resume (Remote)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[YOUR_BRIDGE_URL]/apply",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-IWork-Token",
+              "value": "[YOUR_BRIDGE_TOKEN]"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": \"{{ $json.url }}\",\n  \"jobtitle\": \"{{ $json.title }}\",\n  \"resume_name\": \"{{ $json.output && $json.output.includes('Resume_Control') ? 'Resume_Control.pdf' : 'Resume_Electronics.pdf' }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 1400, 640 ],
+      "id": "a1000000-0000-4000-8000-00000000000d",
+      "name": "Apply to Job (Remote)"
     }
   ],
   "connections": {
     "Schedule Trigger": {
       "main": [
         [
-          { "node": "Search Jobs (API)", "type": "main", "index": 0 },
-          { "node": "Search Jobs1 (API)", "type": "main", "index": 0 }
+          { "node": "Search Jobs (SF)", "type": "main", "index": 0 },
+          { "node": "Search Jobs (Remote)", "type": "main", "index": 0 }
         ]
       ]
     },
-    "Search Jobs (API)": {
+    "Search Jobs (SF)": {
       "main": [
         [
-          { "node": "Gemini AI Agent", "type": "main", "index": 0 }
+          { "node": "Split Jobs (SF)", "type": "main", "index": 0 }
         ]
       ]
     },
-    "Gemini AI Agent": {
+    "Split Jobs (SF)": {
       "main": [
         [
-          { "node": "Apply to Job (API)", "type": "main", "index": 0 }
+          { "node": "Pick Resume (SF)", "type": "main", "index": 0 },
+          { "node": "Job + Resume (SF)", "type": "main", "index": 0 }
         ]
       ]
     },
-    "Search Jobs1 (API)": {
+    "Pick Resume (SF)": {
       "main": [
         [
-          { "node": "Gemini AI Agent1", "type": "main", "index": 0 }
+          { "node": "Job + Resume (SF)", "type": "main", "index": 1 }
         ]
       ]
     },
-    "Gemini AI Agent1": {
-      "main": [
-        [
-          { "node": "Apply to Job1 (API)", "type": "main", "index": 0 }
-        ]
-      ]
-    },
-    "Google Gemini Chat Model": {
+    "Gemini (SF)": {
       "ai_languageModel": [
         [
-          { "node": "Gemini AI Agent", "type": "ai_languageModel", "index": 0 }
+          { "node": "Pick Resume (SF)", "type": "ai_languageModel", "index": 0 }
         ]
       ]
     },
-    "Google Gemini Chat Model1": {
+    "Job + Resume (SF)": {
+      "main": [
+        [
+          { "node": "Apply to Job (SF)", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Search Jobs (Remote)": {
+      "main": [
+        [
+          { "node": "Split Jobs (Remote)", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Split Jobs (Remote)": {
+      "main": [
+        [
+          { "node": "Pick Resume (Remote)", "type": "main", "index": 0 },
+          { "node": "Job + Resume (Remote)", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Pick Resume (Remote)": {
+      "main": [
+        [
+          { "node": "Job + Resume (Remote)", "type": "main", "index": 1 }
+        ]
+      ]
+    },
+    "Gemini (Remote)": {
       "ai_languageModel": [
         [
-          { "node": "Gemini AI Agent1", "type": "ai_languageModel", "index": 0 }
+          { "node": "Pick Resume (Remote)", "type": "ai_languageModel", "index": 0 }
+        ]
+      ]
+    },
+    "Job + Resume (Remote)": {
+      "main": [
+        [
+          { "node": "Apply to Job (Remote)", "type": "main", "index": 0 }
         ]
       ]
     }
