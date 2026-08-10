@@ -7,13 +7,33 @@ orchestrated by n8n.
 ## Architecture
 
 ```
-n8n (Docker)                      host (systemd)
+n8n (Docker)              host (systemd)
 Schedule 8 AM
-  -> POST /search   ------------>  FastAPI bridge  -> search_jobs.py  -> jobspy
-                                                     (filters + picks resume)
-  -> Split Out "jobs"
-  -> POST /apply    ------------>  FastAPI bridge  -> apply_job.py    -> Playwright
+  -> POST /run  --------->  FastAPI bridge
+                              search_jobs.py  -> jobspy      (filter + pick resume)
+                              apply_job.py    -> Playwright  (per eligible job)
+                            <- {searched, submitted, skipped, errors, by_reason}
+Schedule 6 PM
+  -> GET /stats ---------->  FastAPI bridge
+  -> Resend email
 ```
+
+**n8n schedules; it does not orchestrate.** An earlier version fanned the job
+list out with a Split Out node and made one HTTP request per job, driven by
+`$json` expressions. Every one of those was somewhere the plumbing could be
+wrong -- Split Out field names, paired-item lookups, expression syntax the UI
+rewrites on import -- and several of them were. `/run` does the whole day's
+work in one call, so the workflow contains no expressions at all and the logic
+lives in Python where it is unit-tested and its failures are loud.
+
+It also means the entire pipeline is testable without n8n:
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/run -H "X-IWork-Token: $BRIDGE_TOKEN" -H 'Content-Type: application/json' -d '{"dry_run":true}'
+```
+
+`/search` and `/apply` remain as separate endpoints for debugging a single
+stage; `/run` is what the schedule calls.
 
 Two external dependencies were deliberately removed from this critical path,
 because each one silently took the whole pipeline down.
@@ -112,17 +132,16 @@ Import `workflow_iwork.json`, then replace `[YOUR_BRIDGE_URL]`,
 `[YOUR_BRIDGE_TOKEN]`, `[YOUR_RESEND_API_KEY]` and `[YOUR_EMAIL]`. No n8n
 credentials need configuring.
 
-It is one workflow with two independent triggers:
+It is one workflow, five nodes, two independent triggers:
 
 | Trigger | Cron | Chain |
 |---|---|---|
-| Daily 8 AM - Apply | `0 8 * * *` | `/search` -> Split Out -> `/apply`, one branch per location |
-| Daily 6 PM - Report | `0 18 * * *` | `/stats` -> Resend email |
+| Daily 8 AM - Apply | `0 8 * * *` | `POST /run` |
+| Daily 6 PM - Report | `0 18 * * *` | `GET /stats` -> Resend email |
 
-The report is a second trigger rather than a continuation of the 8 AM chain on
-purpose. The apply branches emit one item per job, so chaining the email after
-them would send one email per job; collapsing them back would need Merge plus
-Aggregate nodes, and that kind of fan-in plumbing is what previously broke.
+The `/run` node carries a 15-minute timeout, since one call covers every
+location and every eligible job. Per-job cost is bounded by `APPLY_TIMEOUT` and
+the total by `MAX_PER_RUN` times the number of locations.
 
 Import as a **new** workflow rather than importing into an existing one. n8n
 stores schedule-trigger recurrence state in each workflow's `staticData`, and

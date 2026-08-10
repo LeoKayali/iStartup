@@ -152,6 +152,85 @@ def run_apply(req: ApplyRequest):
     return payload
 
 
+class RunRequest(BaseModel):
+    keyword: str | None = None
+    locations: list[str] | None = None
+    limit: int | None = None
+    dry_run: bool = False
+
+
+def tally(outcomes):
+    """Fold per-job apply results into a run summary. Pure, so it is testable."""
+    summary = {"submitted": 0, "skipped": 0, "errors": 0, "by_reason": {}, "titles": []}
+    for o in outcomes:
+        status = o.get("status")
+        if status == "submitted":
+            summary["submitted"] += 1
+            summary["titles"].append(o.get("title", "Unknown Title"))
+        elif status == "skipped":
+            summary["skipped"] += 1
+            reason = o.get("reason", "unknown")
+            summary["by_reason"][reason] = summary["by_reason"].get(reason, 0) + 1
+        else:
+            summary["errors"] += 1
+            reason = o.get("reason", "unknown error")
+            summary["by_reason"][reason] = summary["by_reason"].get(reason, 0) + 1
+    return summary
+
+
+@app.post("/run", dependencies=[Depends(require_token)])
+def run_everything(req: RunRequest):
+    """Do a whole day's work in one call.
+
+    n8n used to orchestrate this with a Split Out node, per-item HTTP requests
+    and $json expressions. Every one of those was a place to get the plumbing
+    wrong, and several of them were. The scheduler only needs to say "go".
+    """
+    keyword = req.keyword or os.getenv("SEARCH_KEYWORDS", "Electronics Automation, Controls Engineer, PLC")
+    locations = req.locations or [
+        s.strip() for s in os.getenv("SEARCH_LOCATIONS", "San Francisco,Remote").split(",") if s.strip()
+    ]
+
+    searched = 0
+    outcomes = []
+
+    for location in locations:
+        payload = run_search(SearchRequest(keyword=keyword, location=location, limit=req.limit))
+        jobs = payload.get("jobs", [])
+        searched += len(jobs)
+        log.info("run: %s -> %d job(s)", location, len(jobs))
+
+        for job in jobs:
+            title = job.get("title", "Unknown Title")
+            try:
+                result = run_apply(
+                    ApplyRequest(
+                        url=job.get("url", ""),
+                        jobtitle=title,
+                        resume_name=job.get("resume") or "Resume_Electronics.pdf",
+                        dry_run=req.dry_run,
+                    )
+                )
+            except HTTPException as e:
+                # One unapplyable job must not abort the batch. It is still
+                # counted as an error and reported in the summary.
+                detail = e.detail if isinstance(e.detail, dict) else {"error": str(e.detail)}
+                log.warning("run: apply failed for %s: %s", title, detail)
+                result = {"status": "error", "reason": str(detail.get("error", "apply failed"))[:200]}
+            result.setdefault("title", title)
+            outcomes.append(result)
+
+    summary = tally(outcomes)
+    summary["searched"] = searched
+    summary["locations"] = locations
+    summary["dry_run"] = req.dry_run
+    log.info(
+        "run: searched=%d submitted=%d skipped=%d errors=%d",
+        searched, summary["submitted"], summary["skipped"], summary["errors"],
+    )
+    return summary
+
+
 @app.get("/health")
 def health():
     """Cheap readiness check: everything the pipeline needs, verified."""

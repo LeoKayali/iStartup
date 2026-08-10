@@ -113,6 +113,30 @@ check("maintenance tech with PLC -> control",
       classify("Equipment Maintenance Technician",
                "Basic troubleshooting of PLC-controlled equipment, sensors, relays, HMIs"), C)
 
+print("run summary tally")
+# server.py imports fastapi/pydantic, which selftest must not require. Import
+# the module only if those are installed; skip cleanly otherwise.
+try:
+    import server
+except ImportError as e:
+    print(f"  skip  (server.py needs {e.name}; run this in the venv to cover it)")
+else:
+    s = server.tally([
+        {"status": "submitted", "title": "PLC Engineer"},
+        {"status": "submitted", "title": "Controls Engineer"},
+        {"status": "skipped", "reason": "no file input found"},
+        {"status": "skipped", "reason": "no file input found"},
+        {"status": "skipped", "reason": "no visible submit control found"},
+        {"status": "error", "reason": "invalid url"},
+    ])
+    check("counts submissions", s["submitted"], 2)
+    check("counts skips", s["skipped"], 3)
+    check("counts errors", s["errors"], 1)
+    check("groups skip reasons", s["by_reason"]["no file input found"], 2)
+    check("records submitted titles", s["titles"], ["PLC Engineer", "Controls Engineer"])
+    empty = server.tally([])
+    check("empty run tallies to zero", (empty["submitted"], empty["skipped"], empty["errors"]), (0, 0, 0))
+
 print()
 if FAILURES:
     print(f"{len(FAILURES)} check(s) failed: {', '.join(FAILURES)}")
