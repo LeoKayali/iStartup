@@ -68,10 +68,23 @@ def client_for(mod):
 
 
 # Stub bodies. Each prints the JSON contract and exits with a chosen code.
+# Aggregator behaviour: results differ per location, so every URL is unique.
 SEARCH_OK = """
+loc = sys.argv[sys.argv.index("--location") + 1] if "--location" in sys.argv else "x"
+slug = loc.replace(" ", "-").lower()
 jobs = [
-    {"title": "PLC Engineer", "url": "https://x.test/1", "description": "d", "resume": "Resume_Control.pdf"},
-    {"title": "Hardware Engineer", "url": "https://x.test/2", "description": "d", "resume": "Resume_Electronics.pdf"},
+    {"title": "PLC Engineer", "url": f"https://x.test/{slug}/1", "description": "d", "resume": "Resume_Control.pdf"},
+    {"title": "Hardware Engineer", "url": f"https://x.test/{slug}/2", "description": "d", "resume": "Resume_Electronics.pdf"},
+]
+print(json.dumps({"count": len(jobs), "jobs": jobs}))
+sys.exit(0)
+"""
+# ATS behaviour: boards are per company, so the same postings come back for
+# every location searched.
+SEARCH_SAME = """
+jobs = [
+    {"title": "Controls Engineer", "url": "https://ats.test/1", "description": "d", "resume": "Resume_Control.pdf"},
+    {"title": "PCB Engineer", "url": "https://ats.test/2", "description": "d", "resume": "Resume_Electronics.pdf"},
 ]
 print(json.dumps({"count": len(jobs), "jobs": jobs}))
 sys.exit(0)
@@ -166,6 +179,14 @@ c = client_for(mod)
 r = c.post("/run", json={"locations": ["Remote"]}).json()
 check("request body can override locations", (r["locations"], r["searched"]), (["Remote"], 2))
 check("dry_run is echoed back", c.post("/run", json={"dry_run": True}).json()["dry_run"], True)
+
+mod = load_server(make_scripts(SEARCH_SAME, APPLY_SUBMITTED))
+c = client_for(mod)
+r = c.post("/run", json={}).json()
+check("ATS postings repeated per location are applied to once", r["attempted"], 2)
+check("the repeats are counted as duplicates", r["duplicates"], 2)
+check("searched still reports the raw total", r["searched"], 4)
+check("no double submissions", r["submitted"], 2)
 
 print("token enforcement")
 mod = load_server(make_scripts(SEARCH_OK, APPLY_SUBMITTED), BRIDGE_TOKEN="s3cret")

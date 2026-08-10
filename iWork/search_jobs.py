@@ -89,6 +89,30 @@ def classify_resume(title, description, control_any, electronics_any):
     return RESUME_CONTROL if control_hits > electronics_hits else RESUME_ELECTRONICS
 
 
+def interleave(jobs):
+    """Round-robin by company.
+
+    ATS boards differ enormously in size -- one source returned 1101 postings
+    while another returned 1 -- so a straight cap hands the entire daily batch
+    to whichever large board happens to sort first.
+    """
+    buckets = {}
+    order = []
+    for job in jobs:
+        key = job.get("company") or ""
+        if key not in buckets:
+            buckets[key] = []
+            order.append(key)
+        buckets[key].append(job)
+
+    out = []
+    while len(out) < len(jobs):
+        for key in order:
+            if buckets[key]:
+                out.append(buckets[key].pop(0))
+    return out
+
+
 def select(rows, applied, include_any, exclude_any, limit):
     """Dedupe, drop already-applied and off-target jobs, then cap the batch."""
     seen = set()
@@ -117,7 +141,9 @@ def select(rows, applied, include_any, exclude_any, limit):
     )
 
     if limit and len(picked) > limit:
-        log(f"search: capping {len(picked)} eligible jobs at limit={limit}")
+        picked = interleave(picked)
+        companies = sorted({j.get("company") or "?" for j in picked[:limit]})
+        log(f"search: capping {len(picked)} eligible jobs at limit={limit} across {companies}")
         picked = picked[:limit]
 
     return picked
@@ -149,9 +175,55 @@ def scrape(keywords, location, results_wanted, hours_old, country, desc_chars):
                     "title": str(row.get("title") or "").strip(),
                     "url": str(row.get("job_url") or "").strip(),
                     "description": str(row.get("description") or "")[:desc_chars],
+                    "company": str(row.get("company") or "").strip(),
                 }
             )
     return rows
+
+
+def gather(args):
+    """Collect postings from the enabled sources.
+
+    Returns (rows, fatal). Aggregators and ATS boards fail in different ways --
+    a scraper blowing up is fatal, one dead company board is not -- so this
+    only reports fatal when every enabled source produced nothing by failing.
+    """
+    rows = []
+    boards_failed = ats_failed = False
+
+    if args.sources in ("boards", "both"):
+        try:
+            rows.extend(scrape(
+                [k.strip() for k in args.keyword.split(",") if k.strip()],
+                args.location,
+                args.results_wanted,
+                args.hours_old,
+                args.country,
+                args.desc_chars,
+            ))
+        except Exception as e:
+            log(f"search: aggregator FAILED {type(e).__name__}: {e}")
+            boards_failed = True
+
+    if args.sources in ("ats", "both"):
+        import ats_jobs
+
+        sources = ats_jobs.load_sources(args.ats_sources or None, args.ats_sources_file)
+        if not sources:
+            log("search: no ATS sources configured")
+            ats_failed = True
+        else:
+            ats_rows, failures = ats_jobs.fetch_all(sources, args.hours_old, args.desc_chars)
+            rows.extend(ats_rows)
+            if len(failures) == len(sources):
+                log(f"search: every ATS source failed ({len(failures)})")
+                ats_failed = True
+
+    if args.sources == "boards":
+        return rows, boards_failed
+    if args.sources == "ats":
+        return rows, ats_failed
+    return rows, (boards_failed and ats_failed)
 
 
 def main():
@@ -169,26 +241,23 @@ def main():
     parser.add_argument("--control-terms", default=os.getenv("MATCH_CONTROL_ANY", DEFAULT_CONTROL_ANY))
     parser.add_argument("--electronics-terms", default=os.getenv("MATCH_ELECTRONICS_ANY", DEFAULT_ELECTRONICS_ANY))
     parser.add_argument("--desc-chars", type=int, default=int(os.getenv("DESC_CHARS", "3000")))
+    parser.add_argument("--sources", default=os.getenv("JOB_SOURCES", "both"),
+                        choices=["boards", "ats", "both"],
+                        help="boards = jobspy aggregators, ats = Greenhouse/Lever/Ashby")
+    parser.add_argument("--ats-sources", default=os.getenv("ATS_SOURCES", ""),
+                        help="Inline list, e.g. 'greenhouse:acme,lever:widgets'")
+    parser.add_argument("--ats-sources-file", default=os.getenv("ATS_SOURCES_FILE", "ats_sources.json"))
     args = parser.parse_args()
 
-    keywords = [k.strip() for k in args.keyword.split(",") if k.strip()]
-    if not keywords:
+    if not [k.strip() for k in args.keyword.split(",") if k.strip()]:
         log("search: --keyword produced no usable terms")
         return 1
 
-    try:
-        rows = scrape(
-            keywords,
-            args.location,
-            args.results_wanted,
-            args.hours_old,
-            args.country,
-            args.desc_chars,
-        )
-    except Exception as e:
+    rows, fatal = gather(args)
+    if fatal:
         # Loud and non-zero. The bridge turns this into an HTTP 500 so the
         # n8n node goes red instead of quietly processing a fake job.
-        log(f"search: FAILED {type(e).__name__}: {e}")
+        log("search: FAILED every enabled source errored")
         return 1
 
     jobs = select(

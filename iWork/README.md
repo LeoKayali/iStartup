@@ -186,10 +186,43 @@ search for "Electronics Automation" returns things like "Legal Assistant".
 Whichever list matches more distinct terms in the title plus description wins;
 ties and no-match fall to `Resume_Electronics.pdf`.
 
+## Job sources
+
+`JOB_SOURCES` selects where postings come from.
+
+**`ats`** (default) reads company job boards directly: Greenhouse, Lever and
+Ashby all publish read-only JSON with no auth. Sources are listed in
+`ats_sources.json` as `{"type", "id"}` pairs. Validate a list before trusting
+it, since companies rename and delete boards:
+
+```bash
+python ats_jobs.py --check
+```
+
+**`boards`** uses the jobspy aggregators (Indeed, ZipRecruiter).
+
+The default is `ats` because the two were measured against each other:
+
+| | aggregators | ATS boards |
+|---|---|---|
+| Postings fetched | 10 | 1792 |
+| Time | 75s | 5s |
+| Relevant after filtering | 3 | 283 |
+| Reached a completable form | **0** | **3 of 5 attempted** |
+
+ZipRecruiter answers every request with `403 forbidden cf-waf`, and Indeed's
+`viewjob` pages expose no application form to headless Playwright, so that path
+can only ever report `skipped`. ATS application pages carry a real
+`input[type=file]`.
+
+ATS boards vary enormously in size -- one source returned 1101 postings and
+another returned 1 -- so `search_jobs.py` round-robins by company before
+applying `MAX_PER_RUN`. Otherwise the largest board takes the entire batch.
+
 ## Known limitation
 
-Most large boards (Indeed's SmartApply, LinkedIn Easy Apply) put their
-application flow behind bot detection that headless Playwright cannot clear.
+Aggregators (Indeed's SmartApply, LinkedIn Easy Apply) put their application
+flow behind bot detection that headless Playwright cannot clear.
 For those, `apply_job.py` correctly reports
 `skipped: no file input found; not a completable application form` rather than
 claiming a submission. Direct employer/ATS application pages (Greenhouse,

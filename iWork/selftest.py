@@ -89,6 +89,19 @@ check("rejects empty", apply_job.valid_url(""), False)
 check("rejects a bare host", apply_job.valid_url("example.com/job"), False)
 check("rejects a file url", apply_job.valid_url("file:///etc/passwd"), False)
 
+print("round-robin across companies")
+mixed = ([{"title": "Controls Engineer", "url": f"https://a.test/{i}", "description": "", "company": "big"} for i in range(6)]
+         + [{"title": "PCB Engineer", "url": "https://b.test/1", "description": "", "company": "small"}]
+         + [{"title": "PLC Engineer", "url": f"https://c.test/{i}", "description": "", "company": "mid"} for i in range(2)])
+rr = search_jobs.interleave(mixed)
+check("first pass takes one per company", [j["company"] for j in rr[:3]], ["big", "small", "mid"])
+check("nothing is lost", len(rr), len(mixed))
+check("every url survives", len({j["url"] for j in rr}), len(mixed))
+# The real failure this prevents: one 1101-posting board eating the whole batch.
+capped = search_jobs.select(mixed, set(), include, exclude, limit=3)
+check("a cap spreads across companies", sorted({j["company"] for j in capped}), ["big", "mid", "small"])
+check("single-company input still works", len(search_jobs.interleave(mixed[:6])), 6)
+
 print("resume classification (replaces the Gemini agent node)")
 ctl = search_jobs.terms(search_jobs.DEFAULT_CONTROL_ANY)
 ele = search_jobs.terms(search_jobs.DEFAULT_ELECTRONICS_ANY)

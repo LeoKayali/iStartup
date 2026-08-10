@@ -83,6 +83,7 @@ class SearchRequest(BaseModel):
     limit: int | None = None
     hours_old: int | None = None
     results_wanted: int | None = None
+    sources: str | None = None   # boards | ats | both
 
 
 class ApplyRequest(BaseModel):
@@ -108,6 +109,8 @@ def run_search(req: SearchRequest):
         cmd += ["--hours-old", str(req.hours_old)]
     if req.results_wanted is not None:
         cmd += ["--results-wanted", str(req.results_wanted)]
+    if req.sources:
+        cmd += ["--sources", req.sources]
 
     rc, stdout, stderr = run(cmd, SEARCH_TIMEOUT)
     if rc != 0:
@@ -157,6 +160,7 @@ class RunRequest(BaseModel):
     locations: list[str] | None = None
     limit: int | None = None
     dry_run: bool = False
+    sources: str | None = None   # boards | ats | both
 
 
 def tally(outcomes):
@@ -192,15 +196,26 @@ def run_everything(req: RunRequest):
     ]
 
     searched = 0
+    duplicates = 0
+    seen = set()
     outcomes = []
 
     for location in locations:
-        payload = run_search(SearchRequest(keyword=keyword, location=location, limit=req.limit))
+        payload = run_search(SearchRequest(
+            keyword=keyword, location=location, limit=req.limit, sources=req.sources))
         jobs = payload.get("jobs", [])
         searched += len(jobs)
         log.info("run: %s -> %d job(s)", location, len(jobs))
 
         for job in jobs:
+            # ATS boards are per company, not per location, so the same posting
+            # comes back for every location searched. Apply to it once.
+            url = job.get("url", "")
+            if url in seen:
+                duplicates += 1
+                continue
+            seen.add(url)
+
             title = job.get("title", "Unknown Title")
             try:
                 result = run_apply(
@@ -222,11 +237,13 @@ def run_everything(req: RunRequest):
 
     summary = tally(outcomes)
     summary["searched"] = searched
+    summary["duplicates"] = duplicates
+    summary["attempted"] = len(seen)
     summary["locations"] = locations
     summary["dry_run"] = req.dry_run
     log.info(
-        "run: searched=%d submitted=%d skipped=%d errors=%d",
-        searched, summary["submitted"], summary["skipped"], summary["errors"],
+        "run: searched=%d attempted=%d dupes=%d submitted=%d skipped=%d errors=%d",
+        searched, len(seen), duplicates, summary["submitted"], summary["skipped"], summary["errors"],
     )
     return summary
 

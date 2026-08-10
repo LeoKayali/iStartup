@@ -88,6 +88,48 @@ def mark_applied(log_dir, url, job_title):
     )
 
 
+async def find_submit(page):
+    """Locate the control that submits the application.
+
+    Requiring [type=submit] is not enough: a <button> inside a form defaults to
+    submit and Lever's "Submit application" button carries no type attribute at
+    all, which made a fully completed form report "no visible submit control".
+
+    Only submit-like wording is matched. "Apply" is deliberately excluded --
+    on many pages that is a navigation link, and clicking it would abandon the
+    form we just filled.
+    """
+    for selector in ('button[type="submit"]', 'input[type="submit"]'):
+        for element in await page.query_selector_all(selector):
+            if await element.is_visible():
+                return element, selector
+
+    for element in await page.query_selector_all("form button, button"):
+        try:
+            if not await element.is_visible():
+                continue
+            label = (
+                (await element.inner_text())
+                or (await element.get_attribute("value"))
+                or (await element.get_attribute("aria-label"))
+                or ""
+            ).strip().lower()
+            if any(word in label for word in ("submit", "send application")):
+                return element, f"text:{label[:30]}"
+        except Exception:
+            continue
+    return None, None
+
+
+async def find_file_inputs(page):
+    """File inputs on SPA application pages can mount a beat late."""
+    inputs = await page.query_selector_all('input[type="file"]')
+    if inputs:
+        return inputs
+    await page.wait_for_timeout(3000)
+    return await page.query_selector_all('input[type="file"]')
+
+
 async def fill_first_visible(page, selector, value):
     """Fill matching inputs; return how many were actually filled."""
     filled = 0
@@ -126,7 +168,7 @@ async def apply_to_job(url, resume_path, applicant, log_dir, dry_run, headless, 
 
             # A page with no file input is not an application form we can
             # complete. Skip rather than pretend.
-            file_inputs = await page.query_selector_all('input[type="file"]')
+            file_inputs = await find_file_inputs(page)
             if not file_inputs:
                 return {"status": "skipped", "reason": "no file input found; not a completable application form"}
 
@@ -142,12 +184,22 @@ async def apply_to_job(url, resume_path, applicant, log_dir, dry_run, headless, 
             if not attached:
                 return {"status": "skipped", "reason": "resume upload rejected by the page"}
 
+            # ATS platforms name their fields very differently, so match on
+            # name/id plus aria-label and placeholder. Ashby in particular
+            # exposes almost nothing on name/id alone.
+            def any_of(*fragments):
+                parts = []
+                for fragment in fragments:
+                    for attr in ("name", "id", "aria-label", "placeholder"):
+                        parts.append(f'input[{attr}*="{fragment}" i]')
+                return ", ".join(parts)
+
             filled = 0
-            filled += await fill_first_visible(page, 'input[name*="first" i], input[id*="first" i]', applicant["firstname"])
-            filled += await fill_first_visible(page, 'input[name*="last" i], input[id*="last" i]', applicant["lastname"])
-            filled += await fill_first_visible(page, 'input[type="email"], input[name*="email" i], input[id*="email" i]', applicant["email"])
-            filled += await fill_first_visible(page, 'input[type="tel"], input[name*="phone" i], input[id*="phone" i]', applicant["phone"])
-            filled += await fill_first_visible(page, 'input[name*="linkedin" i], input[name*="url" i]', applicant["linkedin"])
+            filled += await fill_first_visible(page, any_of("first"), applicant["firstname"])
+            filled += await fill_first_visible(page, any_of("last"), applicant["lastname"])
+            filled += await fill_first_visible(page, 'input[type="email"], ' + any_of("email"), applicant["email"])
+            filled += await fill_first_visible(page, 'input[type="tel"], ' + any_of("phone", "mobile"), applicant["phone"])
+            filled += await fill_first_visible(page, any_of("linkedin"), applicant["linkedin"])
             if applicant.get("password"):
                 filled += await fill_first_visible(page, 'input[type="password"]', applicant["password"])
 
@@ -156,11 +208,9 @@ async def apply_to_job(url, resume_path, applicant, log_dir, dry_run, headless, 
 
             await page.wait_for_timeout(2000)
 
-            submit = None
-            for btn in await page.query_selector_all('button[type="submit"], input[type="submit"]'):
-                if await btn.is_visible():
-                    submit = btn
-                    break
+            submit, how = await find_submit(page)
+            if submit is not None:
+                log(f"apply: submit control matched via {how}")
 
             if submit is None:
                 return {"status": "skipped", "reason": "no visible submit control found", "fields_filled": filled}
