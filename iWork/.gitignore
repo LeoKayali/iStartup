@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Logs and the applied/skipped memory bank.
+# NOTE: deliberately not "*.txt" -- that pattern also swallowed requirements.txt.
+logs/
+applied_jobs.txt
+applied_jobs_detailed.jsonl
+skipped_jobs.jsonl
+
+# Resume PDFs are personal; keep them out of the repo.
+resumes/
+*.pdf
+
+# OS
+.DS_Store
+Thumbs.db

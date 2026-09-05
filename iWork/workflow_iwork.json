@@ -1,0 +1,117 @@
+{
+  "name": "iWork",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [ 260, 300 ],
+      "id": "d1000000-0000-4000-8000-000000000001",
+      "name": "Daily 8 AM - Apply"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "[YOUR_BRIDGE_URL]/run",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-IWork-Token", "value": "[YOUR_BRIDGE_TOKEN]" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"keyword\": \"Electronics Automation, Controls Engineer, PLC\",\n  \"locations\": [\"San Francisco\", \"Remote\"],\n  \"limit\": 5\n}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 560, 300 ],
+      "id": "d1000000-0000-4000-8000-000000000002",
+      "name": "Run Job Applications"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 18 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [ 260, 560 ],
+      "id": "d1000000-0000-4000-8000-000000000003",
+      "name": "Daily 6 PM - Report"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "[YOUR_BRIDGE_URL]/stats",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-IWork-Token", "value": "[YOUR_BRIDGE_TOKEN]" }
+          ]
+        },
+        "sendBody": false,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 560, 560 ],
+      "id": "d1000000-0000-4000-8000-000000000004",
+      "name": "Get Application Stats"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer [YOUR_RESEND_API_KEY]" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"onboarding@resend.dev\",\n  \"to\": [\"[YOUR_EMAIL]\"],\n  \"subject\": \"iWork: {{ $json.today_count }} applied, {{ $json.skipped_today }} skipped\",\n  \"html\": \"<p>Submitted today: <strong>{{ $json.today_count }}</strong></p><ul>{{ $json.today_count === 0 ? '<li>Nothing submitted today.</li>' : $json.today_jobs.map(j => '<li>' + j + '</li>').join('') }}</ul><p>Skipped today: <strong>{{ $json.skipped_today }}</strong></p><ul>{{ Object.entries($json.skip_reasons || {}).map(e => '<li>' + e[1] + ' x ' + e[0] + '</li>').join('') || '<li>None</li>' }}</ul><p>Total applied all-time: <strong>{{ $json.total_applied }}</strong></p>\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [ 860, 560 ],
+      "id": "d1000000-0000-4000-8000-000000000005",
+      "name": "Send Email via Resend"
+    }
+  ],
+  "connections": {
+    "Daily 8 AM - Apply": {
+      "main": [ [ { "node": "Run Job Applications", "type": "main", "index": 0 } ] ]
+    },
+    "Daily 6 PM - Report": {
+      "main": [ [ { "node": "Get Application Stats", "type": "main", "index": 0 } ] ]
+    },
+    "Get Application Stats": {
+      "main": [ [ { "node": "Send Email via Resend", "type": "main", "index": 0 } ] ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Los_Angeles"
+  }
+}

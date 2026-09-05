@@ -1,6 +1,13 @@
+# NOTE: `asyncio` was removed. It is a stdlib module; the PyPI package of the
+# same name is an abandoned 3.4-era backport that shadows the real one.
+python-jobspy>=1.1.80
+requests>=2.31       # ATS board APIs
 playwright>=1.41.0
-fastapi
-uvicorn
-python-dotenv
-python-jobspy
-asyncio
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-dotenv>=1.0
+pydantic>=2.0
+
+# jobspy scrapes live job boards and its API drifts. Once the pipeline works,
+# freeze it so an unrelated `pip install -U` cannot break the scraper:
+#   pip freeze > requirements.lock

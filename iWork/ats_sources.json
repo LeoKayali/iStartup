@@ -1,0 +1,16 @@
+[
+  { "type": "greenhouse", "id": "andurilindustries" },
+  { "type": "greenhouse", "id": "formlabs" },
+  { "type": "greenhouse", "id": "verkada" },
+  { "type": "greenhouse", "id": "samsara" },
+  { "type": "greenhouse", "id": "nuro" },
+  { "type": "greenhouse", "id": "planetlabs" },
+  { "type": "greenhouse", "id": "astranis" },
+  { "type": "greenhouse", "id": "redwoodmaterials" },
+  { "type": "greenhouse", "id": "pathrobotics" },
+  { "type": "greenhouse", "id": "agilityrobotics" },
+  { "type": "greenhouse", "id": "markforged" },
+  { "type": "lever", "id": "brightmachines" },
+  { "type": "lever", "id": "shieldai" },
+  { "type": "ashby", "id": "physicalintelligence" }
+]
